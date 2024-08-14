@@ -1,10 +1,18 @@
-# Passchain
+# PassChain
+
+*Working in progress*
 
 Multi-factor authentication for LUKS
 
 ## Build
 
-### Release (musl version)
+```sh
+git clone https://github.com/sb-child/passchain
+```
+
+### Release (`musl` target)
+
+Install [docker](https://www.docker.com/) or [podman](https://podman.io/) first.
 
 ```sh
 docker build -o build .
@@ -14,7 +22,11 @@ podman build -o build .
 
 Then check the `build` directory.
 
-### Debug (depend on your environment)
+### Development (depend on your OS)
+
+Install [rust](https://www.rust-lang.org/) first.
+
+And install missing libraries if any.
 
 ```sh
 # build
@@ -22,7 +34,6 @@ cargo b
 # build and run
 cargo r
 ```
-
 
 ## License
 
