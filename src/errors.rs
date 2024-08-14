@@ -8,8 +8,34 @@ use thiserror::Error;
 pub enum PasschainError {
     #[error("tracing error")]
     TracingSetGlobalDefaultError(#[from] tracing::subscriber::SetGlobalDefaultError),
+    #[error("ask exit")]
+    AskError(#[from] AskError),
     #[error("should exit")]
     ShouldExit,
     #[error("unknown error")]
     Unknown,
+}
+
+#[derive(Error, Debug)]
+pub enum AskError {
+    #[error("inquire error")]
+    InquireError(inquire::InquireError),
+    #[error("interrupted")]
+    Interrupted,
+    #[error("canceled")]
+    Canceled,
+}
+
+impl From<inquire::InquireError> for AskError {
+    fn from(value: inquire::InquireError) -> Self {
+        use inquire::InquireError;
+        match value {
+            x @ InquireError::NotTTY => AskError::InquireError(x),
+            x @ InquireError::InvalidConfiguration(_) => AskError::InquireError(x),
+            x @ InquireError::IO(_) => AskError::InquireError(x),
+            InquireError::OperationCanceled => AskError::Canceled,
+            InquireError::OperationInterrupted => AskError::Interrupted,
+            x @ InquireError::Custom(_) => AskError::InquireError(x),
+        }
+    }
 }
