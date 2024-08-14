@@ -1,0 +1,23 @@
+[package]
+name = "passchain"
+version = "0.1.0"
+edition = "2021"
+description = "Multi-factor authentication for LUKS"
+authors = ["sbchild <sbchild0@gmail.com>"]
+repository = "https://github.com/sb-child/passchain"
+license = "MPL-2.0"
+
+[dependencies]
+clap = { version = "4.5.15", features = ["derive"] }
+serde = { version = "*", features = ["derive"] }
+serde_json = { version = "*" }
+toml = { version = "*" }
+thiserror = { version = "*" }
+anyhow = { version = "*", features = ["backtrace"] }
+tokio = { version = "*", features = ["full"] }
+inquire = { version = "0.7.5", features = ["date"] }
+strum = { version = "0.26", features = ["derive"] }
+chrono = "*"
+ctap-hid-fido2 = "3.5.1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
