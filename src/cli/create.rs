@@ -66,8 +66,8 @@ impl Executor {
     }
 
     fn prompt(&self) -> anyhow::Result<(), errors::PasschainError> {
-        'outer: for i in 1..u32::MAX {
-            'inner: loop {
+        'next_factor: for i in 1..u32::MAX {
+            'retry: loop {
                 let fa = match FactorDiscriminants::ask(i) {
                     Ok(f) => Factor::ask(f),
                     Err(e) => match e {
@@ -77,13 +77,34 @@ impl Executor {
                         errors::AskError::Interrupted => {
                             return Err(errors::PasschainError::AskError(e))
                         }
-                        errors::AskError::Canceled => break 'outer,
+                        errors::AskError::Canceled => break 'next_factor,
                     },
                 };
-                match fa {
-                    Ok(f) => {
-                        let fac_name = FactorDiscriminants::from(f);
+                let fa = match fa {
+                    Ok(f) => f,
+                    Err(e) => match e {
+                        e @ errors::AskError::InquireError(_) => {
+                            return Err(errors::PasschainError::AskError(e))
+                        }
+                        errors::AskError::Interrupted => {
+                            return Err(errors::PasschainError::AskError(e))
+                        }
+                        errors::AskError::Canceled => continue 'retry,
+                    },
+                };
+                let fac_name = FactorDiscriminants::from(fa.clone());
+                let fido_fa = match fa {
+                    Factor::Fido(f) => f,
+                    _ => {
                         tracing::info!("Factor {i} with {fac_name} added.");
+                        continue 'next_factor;
+                    }
+                };
+                match fido_fa.ask() {
+                    Ok(x) => {
+                        if !x {
+                            continue 'retry;
+                        }
                     }
                     Err(e) => match e {
                         e @ errors::AskError::InquireError(_) => {
@@ -92,31 +113,77 @@ impl Executor {
                         errors::AskError::Interrupted => {
                             return Err(errors::PasschainError::AskError(e))
                         }
-                        errors::AskError::Canceled => continue 'inner,
+                        errors::AskError::Canceled => continue 'retry,
                     },
-                };
-                continue 'outer;
+                }
+                tracing::info!("Factor {i} with {fac_name} added.");
+                continue 'next_factor;
             }
-        };
+        }
         Ok(())
     }
 }
 
-struct FidoList {
+#[derive(Clone)]
+struct FidoItem {
     info: ctap_hid_fido2::HidInfo,
     device_name: String,
 }
 
-impl std::fmt::Display for FidoList {
+impl std::fmt::Display for FidoItem {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.device_name)
     }
 }
 
-fn get_fido_list() -> Vec<FidoList> {
+impl FidoItem {
+    fn ask(&self) -> Result<bool, errors::AskError> {
+        let title = if self.trigger_wink() {
+            "Wink command sent, is this the exact device you selected?"
+        } else {
+            "This device is not responding to wink command, continue anyway?"
+        };
+        let ans = inquire::Confirm::new(title)
+            .with_default(false)
+            .with_help_message("Type y to accept, type n or press ESC to cancel.")
+            .prompt();
+        match ans {
+            Ok(choice) => Ok(choice),
+            Err(e) => Err(e.into()),
+        }
+    }
+    fn trigger_wink(&self) -> bool {
+        let pb = ProgressBar::new(2);
+        let current_param = self.info.param.clone();
+        let dev = ctap_hid_fido2::FidoKeyHidFactory::create_by_params(
+            &[current_param],
+            &ctap_hid_fido2::Cfg::init(),
+        );
+        let fido = match dev {
+            Ok(x) => x,
+            Err(e) => {
+                tracing::error!("Unable to open the device {0}: {e}", self.device_name);
+                pb.finish_and_clear();
+                return false;
+            }
+        };
+        pb.inc(1);
+        let wk = fido.wink();
+        pb.finish_and_clear();
+        match wk {
+            Ok(_) => true,
+            Err(e) => {
+                tracing::error!("Failed to wink {0}: {e}", self.device_name);
+                false
+            }
+        }
+    }
+}
+
+fn get_fido_list() -> Vec<FidoItem> {
     let devs = ctap_hid_fido2::get_fidokey_devices();
     let mut r = vec![];
-    for info in devs.into_iter().progress_with(ProgressBar::new(20)) {
+    for info in devs.into_iter().progress() {
         let current_info = info.clone();
         let current_param = info.param.clone();
         let dev = ctap_hid_fido2::FidoKeyHidFactory::create_by_params(
@@ -134,7 +201,7 @@ fn get_fido_list() -> Vec<FidoList> {
         match dev {
             Ok(_x) => {
                 let n = format!("{} | {}", info.product_string, device_name);
-                r.push(FidoList {
+                r.push(FidoItem {
                     info: current_info,
                     device_name: n,
                 });
@@ -147,11 +214,11 @@ fn get_fido_list() -> Vec<FidoList> {
     r
 }
 
-#[derive(EnumDiscriminants)]
+#[derive(EnumDiscriminants, Clone)]
 #[strum_discriminants(derive(EnumIter, EnumString, Display))]
 enum Factor {
     Password(String),
-    Fido(FidoList),
+    Fido(FidoItem),
 }
 
 impl Factor {
@@ -169,11 +236,19 @@ impl Factor {
         // tracing::info!("result: {:?}", out);
         match selected {
             FactorDiscriminants::Password => {
-                todo!()
+                let ans = inquire::Password::new("Input a password:")
+                    .with_display_mode(inquire::PasswordDisplayMode::Masked)
+                    .with_display_toggle_enabled()
+                    .with_help_message("press Enter to finish, press ESC to go back, press Ctrl-C to exit, press Ctrl-R to toggle.")
+                    .prompt();
+                match ans {
+                    Ok(choice) => Ok(Self::Password(choice)),
+                    Err(e) => Err(e.into()),
+                }
             }
             FactorDiscriminants::Fido => {
                 let list = get_fido_list();
-                let ans: Result<FidoList, InquireError> =
+                let ans: Result<FidoItem, InquireError> =
             inquire::Select::new(&format!("Select the FIDO key to store this factor:"), list)
                 .with_help_message("Do not remove the key until the process is complete. Press up/down to navigate, press Enter to select, press ESC to go back, press Ctrl-C to exit.")
                 .prompt();
