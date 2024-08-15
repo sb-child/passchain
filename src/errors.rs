@@ -3,13 +3,16 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use thiserror::Error;
+use tokio::task::JoinError;
 
 #[derive(Error, Debug)]
 pub enum PasschainError {
     #[error("tracing error")]
     TracingSetGlobalDefaultError(#[from] tracing::subscriber::SetGlobalDefaultError),
-    #[error("ask exit")]
+    #[error("ask error")]
     AskError(#[from] AskError),
+    #[error("join error")]
+    JoinError(#[from] JoinError),
     #[error("should exit")]
     ShouldExit,
     #[error("unknown error")]
@@ -24,6 +27,16 @@ pub enum AskError {
     Interrupted,
     #[error("canceled")]
     Canceled,
+}
+
+#[derive(Error, Debug)]
+pub enum TaskError {
+    #[error("join error")]
+    JoinError(#[from] JoinError),
+    #[error("sender dropped")]
+    SenderDropped,
+    #[error("receiver dropped")]
+    ReceiverDropped,
 }
 
 impl From<inquire::InquireError> for AskError {
