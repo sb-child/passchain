@@ -65,6 +65,10 @@ fn new_random_block() -> Block {
     tmp
 }
 
+fn new_block() -> Block {
+    [0; BLOCK_SIZE]
+}
+
 #[derive(Parser, Debug)]
 #[command()]
 pub struct Args {}
@@ -400,6 +404,7 @@ enum Task {
         res: BlockSender,
     },
     FidoFactor {
+        pwd: AskPinSender,
         dev: FidoReceiver,
         prev: BlockReceiver,
         res: BlockSender,
@@ -413,8 +418,60 @@ impl Task {
 async fn nonce_task(nonce: BlockSender) -> anyhow::Result<(), errors::TaskError> {
     let x = tokio::task::spawn_blocking(|| new_random_block()).await?;
     if let Err(_) = nonce.send(x) {
-        Err(errors::TaskError::SenderDropped)
+        Err(errors::TaskError::ReceiverDropped)
     } else {
         Ok(())
     }
+}
+
+async fn copier_task(
+    input: BlockReceiver,
+    output1: BlockSender,
+    output2: BlockSender,
+) -> anyhow::Result<(), errors::TaskError> {
+    let input = match input.await {
+        Ok(x) => x,
+        Err(_) => return Err(errors::TaskError::SenderDropped),
+    };
+    async fn cp(x: Block, y: BlockSender) {
+        if let Err(_) = y.send(x) {}
+    }
+    tokio::join!(cp(input.clone(), output1), cp(input, output2));
+    Ok(())
+}
+
+async fn hasher_task(
+    pwd: BlockReceiver,
+    salt: BlockReceiver,
+    res: BlockSender,
+) -> anyhow::Result<(), errors::TaskError> {
+    let pwd = match pwd.await {
+        Ok(x) => x,
+        Err(_) => return Err(errors::TaskError::SenderDropped),
+    };
+    let salt = match salt.await {
+        Ok(x) => x,
+        Err(_) => return Err(errors::TaskError::SenderDropped),
+    };
+    let x = tokio::task::spawn_blocking(move || {
+        let argon = new_hasher();
+        let mut out = new_block();
+        argon.hash_password_into(&pwd, &salt, &mut out).unwrap();
+        out
+    })
+    .await?;
+    if let Err(_) = res.send(x) {
+        Err(errors::TaskError::ReceiverDropped)
+    } else {
+        Ok(())
+    }
+}
+
+async fn fido_factor_task(
+    pwd: AskPinSender,
+    dev: FidoReceiver,
+    prev: BlockReceiver,
+    res: BlockSender,
+) -> anyhow::Result<(), errors::TaskError> {
+    Ok(())
 }

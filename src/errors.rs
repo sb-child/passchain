@@ -33,6 +33,8 @@ pub enum AskError {
 pub enum TaskError {
     #[error("join error")]
     JoinError(#[from] JoinError),
+    // #[error("receive error")]
+    // OneshotReceiveError(#[from] tokio::sync::oneshot::error::RecvError),
     #[error("sender dropped")]
     SenderDropped,
     #[error("receiver dropped")]
