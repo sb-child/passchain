@@ -4,6 +4,7 @@
 
 use crate::errors;
 use clap::{Parser, Subcommand};
+
 use indicatif::{ProgressBar, ProgressIterator};
 use inquire::InquireError;
 
@@ -21,8 +22,8 @@ type StringReceiver = tokio::sync::oneshot::Receiver<String>;
 type FidoSender = tokio::sync::oneshot::Sender<FidoItem>;
 type FidoReceiver = tokio::sync::oneshot::Receiver<FidoItem>;
 
-type TaskErrorSender = tokio::sync::oneshot::Sender<errors::TaskError>;
-type TaskErrorReceiver = tokio::sync::oneshot::Receiver<errors::TaskError>;
+type TaskErrorSender = tokio::sync::oneshot::Sender<Option<errors::TaskError>>;
+type TaskErrorReceiver = tokio::sync::oneshot::Receiver<Option<errors::TaskError>>;
 
 type AskPinContent = (String, StringSender);
 
@@ -132,6 +133,7 @@ impl Executor {
         &mut self,
         factors: Vec<Factor>,
     ) -> anyhow::Result<(), errors::PasschainError> {
+        
         Ok(())
     }
 }
@@ -234,13 +236,19 @@ impl FidoItem {
             Err(e) => Err(e.into()),
         }
     }
-    fn trigger_wink(&self) -> bool {
-        let pb = ProgressBar::new(2);
+
+    fn open(&self) -> anyhow::Result<ctap_hid_fido2::FidoKeyHid> {
         let current_param = self.info.param.clone();
         let dev = ctap_hid_fido2::FidoKeyHidFactory::create_by_params(
             &[current_param],
             &ctap_hid_fido2::Cfg::init(),
         );
+        dev
+    }
+
+    fn trigger_wink(&self) -> bool {
+        let pb = ProgressBar::new(2);
+        let dev = self.open();
         let fido = match dev {
             Ok(x) => x,
             Err(e) => {
@@ -274,10 +282,10 @@ fn get_fido_list() -> Vec<FidoItem> {
         );
         let device_name = match current_param {
             ctap_hid_fido2::HidParam::VidPid { vid, pid } => {
-                format!("{:#06x}:{:#06x}", vid, pid)
+                format!("{:04x}:{:04x}", vid, pid)
             }
             ctap_hid_fido2::HidParam::Path(x) => {
-                format!("{:#06x}:{:#06x} ({})", info.vid, info.pid, x)
+                format!("{:04x}:{:04x} ({})", info.vid, info.pid, x)
             }
         };
         match dev {
@@ -412,7 +420,42 @@ enum Task {
 }
 
 impl Task {
-    async fn run(err_rx: TaskErrorReceiver) {}
+    async fn run(self, err_tx: TaskErrorSender) {
+        match self {
+            Task::Nonce { nonce } => {
+                err_tx.send(nonce_task(nonce).await.err()).unwrap();
+            }
+            Task::Copier {
+                input,
+                output1,
+                output2,
+            } => {
+                err_tx
+                    .send(copier_task(input, output1, output2).await.err())
+                    .unwrap();
+            }
+            Task::Hasher { pwd, salt, res } => {
+                err_tx
+                    .send(hasher_task(pwd, salt, res).await.err())
+                    .unwrap();
+            }
+            Task::PasswordFactor { pwd, prev, res } => {
+                err_tx
+                    .send(password_factor_task(pwd, prev, res).await.err())
+                    .unwrap();
+            }
+            Task::FidoFactor {
+                pwd,
+                dev,
+                prev,
+                res,
+            } => {
+                err_tx
+                    .send(fido_factor_task(pwd, dev, prev, res).await.err())
+                    .unwrap();
+            }
+        }
+    }
 }
 
 async fn nonce_task(nonce: BlockSender) -> anyhow::Result<(), errors::TaskError> {
@@ -467,11 +510,149 @@ async fn hasher_task(
     }
 }
 
+async fn password_factor_task(
+    pwd: StringReceiver,
+    prev: BlockReceiver,
+    res: BlockSender,
+) -> anyhow::Result<(), errors::TaskError> {
+    let hasher = new_hasher();
+    let pwd = match pwd.await {
+        Ok(x) => x,
+        Err(_) => return Err(errors::TaskError::SenderDropped),
+    };
+    let prev = match prev.await {
+        Ok(x) => x,
+        Err(_) => return Err(errors::TaskError::SenderDropped),
+    };
+    let out = tokio::task::spawn_blocking(move || {
+        let pwd = pwd.as_bytes();
+        let mut out = new_block();
+        match hasher.hash_password_into(&pwd, &prev, &mut out) {
+            Ok(_) => Ok(out),
+            Err(e) => Err(errors::TaskError::HasherError(e)),
+        }
+    })
+    .await??;
+    res.send(out).unwrap();
+    Ok(())
+}
+
 async fn fido_factor_task(
     pwd: AskPinSender,
     dev: FidoReceiver,
     prev: BlockReceiver,
     res: BlockSender,
 ) -> anyhow::Result<(), errors::TaskError> {
+    use ctap_hid_fido2::{
+        fidokey::{
+            AssertionExtension, CredentialExtension, GetAssertionArgsBuilder,
+            MakeCredentialArgsBuilder,
+        },
+        verifier::create_challenge,
+    };
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+    let chall = tokio::task::spawn_blocking(|| create_challenge());
+    let chall_2 = tokio::task::spawn_blocking(|| create_challenge());
+    let mut device_name = "".to_string();
+    let dev = match dev.await {
+        Ok(x) => {
+            device_name = x.device_name.clone();
+            let x = tokio::task::spawn_blocking(move || x.open());
+            x.await?
+        }
+        Err(_) => return Err(errors::TaskError::SenderDropped),
+    };
+    let dev = match dev {
+        Ok(x) => x,
+        Err(e) => return Err(errors::TaskError::FidoError(e)),
+    };
+    let (pwd_tx, pwd_rx) = new_string_channel();
+    let pin_content: AskPinContent = (format!("Enter FIDO PIN for \"{device_name}\":"), pwd_tx);
+    if let Err(_) = pwd.send(pin_content).await {
+        return Err(errors::TaskError::ReceiverDropped);
+    }
+    let chall = chall.await?;
+    let prev = match prev.await {
+        Ok(x) => x,
+        Err(_) => return Err(errors::TaskError::SenderDropped),
+    };
+    let (mut rpid, mut hmac_req, mut salt) = ([0u8; 16], [0u8; 32], [0u8; BLOCK_SIZE - 16 - 32]);
+    rpid.clone_from_slice(&prev[0..16]);
+    hmac_req.clone_from_slice(&prev[16..(16 + 32)]);
+    salt.clone_from_slice(&prev[(16 + 32)..]);
+    let rpid_str = format!("passchain-{}", hex::encode(rpid));
+    let pin = match pwd_rx.await {
+        Ok(x) => Arc::new(x),
+        Err(e) => return Err(errors::TaskError::FidoError(e.into())),
+    };
+    let pin_2 = pin.clone();
+    let rpid_str_2 = rpid_str.clone();
+    tracing::warn!("Creating credential \"{rpid_str}\" on \"{device_name}\", please comfirm.");
+    let (dev, make_credential_result) = tokio::task::spawn_blocking(move || {
+        let make_credential_args = MakeCredentialArgsBuilder::new(&rpid_str, &chall)
+            .extensions(&[CredentialExtension::HmacSecret(Some(true))])
+            .pin(&pin)
+            .resident_key()
+            .build();
+        let make_credential_result = dev.make_credential_with_args(&make_credential_args);
+        (dev, make_credential_result)
+    })
+    .await?;
+    let make_credential_result = match make_credential_result {
+        Ok(x) => x,
+        Err(e) => return Err(errors::TaskError::FidoError(e)),
+    };
+    let chall_2 = chall_2.await?;
+    let cid = make_credential_result.rpid_hash;
+    tracing::warn!("Generating hash for \"{rpid_str_2}\" on \"{device_name}\", please comfirm.");
+    let (dev, get_assertion_result) = tokio::task::spawn_blocking(move || {
+        let a = GetAssertionArgsBuilder::new(&rpid_str_2, &chall_2)
+            .extensions(&[AssertionExtension::HmacSecret(Some(hmac_req))])
+            .pin(&pin_2)
+            .build();
+        let get_assertion_result = dev.get_assertion_with_args(&a);
+        (dev, get_assertion_result)
+    })
+    .await?;
+    let get_assertion_result = match get_assertion_result {
+        Ok(x) => x,
+        Err(e) => return Err(errors::TaskError::FidoError(e)),
+    };
+    if get_assertion_result.is_empty() {
+        return Err(errors::TaskError::NoAssertionFound);
+    }
+    if get_assertion_result.len() != 1 {
+        return Err(errors::TaskError::MultipleAssertionFound);
+    }
+    let assertion = get_assertion_result[0].clone();
+    let mut cid = assertion.credential_id;
+    let mut hmac_resp: Vec<u8> = vec![];
+    for ext in assertion.extensions {
+        let x = match ext {
+            AssertionExtension::HmacSecret(x) => x,
+            _ => continue,
+        };
+        if let Some(x) = x {
+            hmac_resp.clone_from_slice(&x);
+            break;
+        }
+    }
+    if entropy::shannon_entropy(hmac_resp.clone()) <= 1.0 {
+        return Err(errors::TaskError::LowEntropy);
+    }
+    let hasher = new_hasher();
+    let mut pwd = vec![];
+    pwd.append(&mut cid);
+    pwd.append(&mut hmac_resp);
+    let out = tokio::task::spawn_blocking(move || {
+        let mut out = new_block();
+        match hasher.hash_password_into(&pwd, &salt, &mut out) {
+            Ok(_) => Ok(out),
+            Err(e) => Err(errors::TaskError::HasherError(e)),
+        }
+    })
+    .await??;
+    res.send(out).unwrap();
     Ok(())
 }

@@ -7,11 +7,11 @@ use tokio::task::JoinError;
 
 #[derive(Error, Debug)]
 pub enum PasschainError {
-    #[error("tracing error")]
+    #[error("tracing error: {0}")]
     TracingSetGlobalDefaultError(#[from] tracing::subscriber::SetGlobalDefaultError),
-    #[error("ask error")]
+    #[error("ask error: {0}")]
     AskError(#[from] AskError),
-    #[error("join error")]
+    #[error("join error: {0}")]
     JoinError(#[from] JoinError),
     #[error("should exit")]
     ShouldExit,
@@ -21,7 +21,7 @@ pub enum PasschainError {
 
 #[derive(Error, Debug)]
 pub enum AskError {
-    #[error("inquire error")]
+    #[error("inquire error: {0}")]
     InquireError(inquire::InquireError),
     #[error("interrupted")]
     Interrupted,
@@ -31,8 +31,18 @@ pub enum AskError {
 
 #[derive(Error, Debug)]
 pub enum TaskError {
-    #[error("join error")]
+    #[error("join error: {0}")]
     JoinError(#[from] JoinError),
+    #[error("fido error: {0}")]
+    FidoError(anyhow::Error),
+    #[error("hasher error: {0}")]
+    HasherError(argon2::Error),
+    #[error("no assertion found")]
+    NoAssertionFound,
+    #[error("multiple assertion found")]
+    MultipleAssertionFound,
+    #[error("entropy too low")]
+    LowEntropy,
     // #[error("receive error")]
     // OneshotReceiveError(#[from] tokio::sync::oneshot::error::RecvError),
     #[error("sender dropped")]
