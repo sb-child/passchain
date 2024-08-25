@@ -2,6 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64},
+    Arc,
+};
+
 use crate::errors;
 use clap::{Parser, Subcommand};
 
@@ -54,7 +59,8 @@ fn new_hasher<'k>() -> argon2::Argon2<'k> {
     argon2::Argon2::new(
         argon2::Algorithm::Argon2id,
         argon2::Version::V0x13,
-        argon2::Params::new(1000000, 30, 1, Some(BLOCK_SIZE)).unwrap(),
+        argon2::Params::new(20000, 20, 1, Some(BLOCK_SIZE)).unwrap(),
+        // argon2::Params::new(1000000, 30, 1, Some(BLOCK_SIZE)).unwrap(),
     )
 }
 
@@ -84,45 +90,6 @@ pub struct Executor {}
 
 impl Executor {
     pub async fn execute(mut self) -> anyhow::Result<(), errors::PasschainError> {
-        // let devs = ctap_hid_fido2::get_fidokey_devices();
-        // for info in devs {
-        //     println!("\n\n---------------------------------------------");
-        //     println!(
-        //         "- vid=0x{:04x} , pid=0x{:04x} , info={:?}",
-        //         info.vid, info.pid, info.info
-        //     );
-
-        //     let dev = ctap_hid_fido2::FidoKeyHidFactory::create_by_params(
-        //         &[info.param],
-        //         &ctap_hid_fido2::Cfg::init(),
-        //     )
-        //     .unwrap();
-        //     dev.wink().unwrap();
-        //     println!("get_info()");
-        //     match dev.get_info() {
-        //         Ok(info) => println!("{}", info),
-        //         Err(e) => println!("error: {:?}", e),
-        //     }
-
-        //     println!("get_pin_retries()");
-        //     match dev.get_pin_retries() {
-        //         Ok(info) => println!("{}", info),
-        //         Err(e) => println!("error: {:?}", e),
-        //     }
-
-        //     println!("get_info_u2f()");
-        //     match dev.get_info_u2f() {
-        //         Ok(info) => println!("{}", info),
-        //         Err(e) => println!("error: {:?}", e),
-        //     }
-
-        //     println!("enable_info_option() - ClinetPin");
-        //     match dev.enable_info_option(&ctap_hid_fido2::fidokey::get_info::InfoOption::ClientPin)
-        //     {
-        //         Ok(result) => println!("PIN = {:?}", result),
-        //         Err(e) => println!("- error: {:?}", e),
-        //     }
-        // }
         let prompt_thread = tokio::task::spawn_blocking(|| prompt_factors());
         let factors = prompt_thread.await??;
         self.compute(factors).await?;
@@ -133,7 +100,279 @@ impl Executor {
         &mut self,
         factors: Vec<Factor>,
     ) -> anyhow::Result<(), errors::PasschainError> {
-        
+        // pre_bytes ->    any_factor(0)  -> any_factor(1..) -> post_bytes
+        //      |              |                    |               |
+        //      V              V                    V               V
+        //    hash   <-       hash        <-      hash       <-   block
+        //      |
+        //      v
+        //   result
+
+        tracing::error!("Computing hash...");
+
+        // progress
+        let prog_all = Arc::new(AtomicU64::new(0));
+        let prog_completed = Arc::new(AtomicU64::new(0));
+        let done = Arc::new(AtomicBool::new(false));
+        async fn prog_fn<F: std::future::Future>(
+            x: F,
+            pa: Arc<AtomicU64>,
+            pc: Arc<AtomicU64>,
+        ) -> tokio::task::JoinHandle<<F as std::future::Future>::Output>
+        where
+            <F as std::future::Future>::Output: Send,
+            <F as std::future::Future>::Output: 'static,
+        {
+            tokio::spawn({
+                pa.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let x = x.await;
+                pc.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                async { x }
+            })
+        }
+
+        // status and askpin
+        let (askpin_tx, mut askpin_rx) = new_ask_pin_channel();
+        let curr_all = prog_all.clone();
+        let curr_completed = prog_completed.clone();
+        let curr_done = done.clone();
+        let pb = ProgressBar::new(1);
+        tokio::task::spawn_blocking(move || loop {
+            let curr_all = curr_all.load(std::sync::atomic::Ordering::Relaxed);
+            let curr_completed = curr_completed.load(std::sync::atomic::Ordering::Relaxed);
+            let curr_done = curr_done.load(std::sync::atomic::Ordering::Relaxed);
+            if curr_all > 0 {
+                pb.set_length(curr_all);
+                pb.set_position(curr_completed);
+            }
+            match askpin_rx.try_recv() {
+                Ok(askpin) => {
+                    pb.suspend(|| {
+                        let ans = inquire::Password::new(&askpin.0)
+                            .with_display_mode(inquire::PasswordDisplayMode::Masked)
+                            .with_display_toggle_enabled()
+                            .with_help_message("press Enter to finish, press ESC or Ctrl-C to cancel, press Ctrl-R to toggle.")
+                            .prompt();
+                        match ans {
+                            Ok(pwd) => {
+                                askpin.1.send(pwd).unwrap();
+                            }
+                            Err(e) => {
+                                tracing::error!("Inquire error during askpin: {:?}", e);
+                                drop(askpin.1);
+                            }
+                        }
+                    });
+                }
+                Err(_e) => std::thread::sleep(tokio::time::Duration::from_millis(1)),
+            };
+            if curr_done {
+                pb.finish_and_clear();
+                break;
+            }
+        });
+
+        // nonce
+        let (pre_nonce_tx, pre_nonce_rx) = new_block_channel();
+        let (post_nonce_tx, post_nonce_rx) = new_block_channel();
+
+        // input args
+        let (pre_input_tx, pre_input_rx) = new_block_channel();
+        let (post_input_tx, post_input_rx) = new_block_channel();
+
+        // output args
+        let (pre_tx, pre_rx) = new_block_channel();
+        let (post_tx, post_rx) = new_block_channel();
+
+        let factor_num = factors.len();
+
+        // factor layer
+        let mut last_rx = Some(pre_input_rx);
+        let mut copied_rx = vec![];
+        let mut factor_tasks = vec![];
+        let mut copier_tasks = vec![];
+        for f in factors.iter() {
+            let (res_tx, res_rx) = new_block_channel();
+            let (cp1_tx, cp1_rx) = new_block_channel();
+            let (cp2_tx, cp2_rx) = new_block_channel();
+            let cp = tokio::spawn(
+                Task::Copier {
+                    input: last_rx.replace(res_rx).unwrap(),
+                    output1: cp1_tx,
+                    output2: cp2_tx,
+                }
+                .run(),
+            );
+            copier_tasks.push(prog_fn(cp, prog_all.clone(), prog_completed.clone()));
+            copied_rx.push(cp2_rx);
+            let task = match f {
+                Factor::Password(x) => {
+                    let (pwd_tx, pwd_rx) = new_string_channel();
+                    pwd_tx.send(x.clone()).unwrap();
+                    tokio::spawn(
+                        Task::PasswordFactor {
+                            pwd: pwd_rx,
+                            prev: cp1_rx,
+                            res: res_tx,
+                        }
+                        .run(),
+                    )
+                }
+                Factor::Fido(x) => {
+                    let (dev_tx, dev_rx) = new_fido_channel();
+                    dev_tx.send(x.clone()).unwrap();
+                    tokio::spawn(
+                        Task::FidoFactor {
+                            pwd: askpin_tx.clone(),
+                            dev: dev_rx,
+                            prev: cp1_rx,
+                            res: res_tx,
+                        }
+                        .run(),
+                    )
+                }
+            };
+            factor_tasks.push(prog_fn(task, prog_all.clone(), prog_completed.clone()));
+        }
+
+        let (factor_hash_tx, factor_hash_rx) = new_block_channel();
+        let factor_layer_hasher = prog_fn(
+            tokio::spawn(
+                Task::Hasher {
+                    pwd: post_input_rx,
+                    salt: last_rx.take().unwrap(),
+                    res: factor_hash_tx,
+                }
+                .run(),
+            ),
+            prog_all.clone(),
+            prog_completed.clone(),
+        );
+
+        // hash layer
+        let mut last_rx = Some(factor_hash_rx);
+        let mut hasher_tasks = vec![];
+        for i in (0..factor_num).rev() {
+            let (res_tx, res_rx) = new_block_channel();
+            hasher_tasks.push(prog_fn(
+                tokio::spawn(
+                    Task::Hasher {
+                        pwd: copied_rx.remove(i),
+                        salt: last_rx.replace(res_rx).unwrap(),
+                        res: res_tx,
+                    }
+                    .run(),
+                ),
+                prog_all.clone(),
+                prog_completed.clone(),
+            ));
+        }
+
+        // copier
+        let pre_copier = prog_fn(
+            tokio::spawn(
+                Task::Copier {
+                    input: pre_nonce_rx,
+                    output1: pre_input_tx,
+                    output2: pre_tx,
+                }
+                .run(),
+            ),
+            prog_all.clone(),
+            prog_completed.clone(),
+        );
+        let post_copier = prog_fn(
+            tokio::spawn(
+                Task::Copier {
+                    input: post_nonce_rx,
+                    output1: post_input_tx,
+                    output2: post_tx,
+                }
+                .run(),
+            ),
+            prog_all.clone(),
+            prog_completed.clone(),
+        );
+
+        // generate initial params
+        let pre_generator = prog_fn(
+            tokio::spawn(
+                Task::Nonce {
+                    nonce: pre_nonce_tx,
+                }
+                .run(),
+            ),
+            prog_all.clone(),
+            prog_completed.clone(),
+        );
+        let post_generator = prog_fn(
+            tokio::spawn(
+                Task::Nonce {
+                    nonce: post_nonce_tx,
+                }
+                .run(),
+            ),
+            prog_all.clone(),
+            prog_completed.clone(),
+        );
+
+        let mut all_tasks = vec![
+            post_generator,
+            pre_generator,
+            post_copier,
+            pre_copier,
+            factor_layer_hasher,
+        ];
+        all_tasks.append(&mut factor_tasks);
+        all_tasks.append(&mut copier_tasks);
+        all_tasks.append(&mut hasher_tasks);
+
+        let all_tasks = futures::future::join_all(futures::future::join_all(all_tasks).await).await;
+
+        for t in all_tasks {
+            let t = t.unwrap().unwrap();
+            match t.await {
+                Ok(x) => match x {
+                    Some(te) => {
+                        done.fetch_update(
+                            std::sync::atomic::Ordering::Relaxed,
+                            std::sync::atomic::Ordering::Relaxed,
+                            |_| Some(true),
+                        )
+                        .unwrap();
+                        tracing::error!("Task error: {:?}", te);
+                    }
+                    None => {}
+                },
+                Err(e) => {
+                    tracing::error!("Receive error: {:?}", e);
+                    done.fetch_update(
+                        std::sync::atomic::Ordering::Relaxed,
+                        std::sync::atomic::Ordering::Relaxed,
+                        |_| Some(true),
+                    )
+                    .unwrap();
+                }
+            }
+        }
+
+        let result_rx = last_rx.take().unwrap().await.unwrap();
+        let pre = pre_rx.await.unwrap();
+        let post = post_rx.await.unwrap();
+        done.fetch_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |_| Some(true),
+        )
+        .unwrap();
+
+        tracing::info!(
+            "Compute completed, hash={}, pre={}, post={}",
+            hex::encode(result_rx),
+            hex::encode(pre),
+            hex::encode(post),
+        );
+
         Ok(())
     }
 }
@@ -217,6 +456,14 @@ struct FidoItem {
 impl std::fmt::Display for FidoItem {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.device_name)
+    }
+}
+
+impl std::fmt::Debug for FidoItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FidoItem")
+            .field("device_name", &self.device_name)
+            .finish()
     }
 }
 
@@ -313,17 +560,6 @@ enum Factor {
 
 impl Factor {
     fn ask(selected: FactorDiscriminants) -> Result<Self, errors::AskError> {
-        // let argon2 = argon2::Argon2::new(
-        //     argon2::Algorithm::Argon2id,
-        //     argon2::Version::V0x13,
-        //     argon2::Params::new(1000000, 30, 1, Some(128)).unwrap(),
-        // );
-        // let mut out = [0u8; 128];
-        // let pwd = [1u8; 128];
-        // let salt = [3u8; 128];
-        // tracing::info!("calc");
-        // argon2.hash_password_into(&pwd, &salt, &mut out).unwrap();
-        // tracing::info!("result: {:?}", out);
         match selected {
             FactorDiscriminants::Password => {
                 let ans = inquire::Password::new("Input a password for this factor:")
@@ -348,33 +584,6 @@ impl Factor {
                 }
             }
         }
-        // let challenge = ctap_hid_fido2::verifier::create_challenge();
-        // let hm = ctap_hid_fido2::verifier::create_challenge();
-        // // let make_credential_args = ctap_hid_fido2::fidokey::MakeCredentialArgsBuilder::new(rpid, &challenge)
-        // // .pin(&pin)
-        // // .build();
-        // let argon2 = argon2::Argon2::default();
-        // // argon2.hash_password_into(pwd, salt, out);
-        // let a = ctap_hid_fido2::fidokey::GetAssertionArgsBuilder::new("", &challenge)
-        //     .extensions(&[ctap_hid_fido2::fidokey::AssertionExtension::HmacSecret(
-        //         Some(hm),
-        //     )])
-        //     .build();
-        // let device =
-        //     ctap_hid_fido2::FidoKeyHidFactory::create(&ctap_hid_fido2::Cfg::init()).unwrap();
-        // // let info = device.get_info().unwrap();
-        // let x = device.get_assertion_with_args(&a).unwrap();
-        // for y in x {
-        //     y.credential_id;
-        //     for z in y.extensions {
-        //         match z {
-        //             ctap_hid_fido2::fidokey::AssertionExtension::HmacSecret(x) => todo!(),
-        //             ctap_hid_fido2::fidokey::AssertionExtension::LargeBlobKey(_) => todo!(),
-        //             ctap_hid_fido2::fidokey::AssertionExtension::CredBlob(_) => todo!(),
-        //         }
-        //     }
-        // }
-        // None
     }
 }
 
@@ -420,7 +629,8 @@ enum Task {
 }
 
 impl Task {
-    async fn run(self, err_tx: TaskErrorSender) {
+    async fn run(self) -> TaskErrorReceiver {
+        let (err_tx, err_rx) = new_task_error_channel();
         match self {
             Task::Nonce { nonce } => {
                 err_tx.send(nonce_task(nonce).await.err()).unwrap();
@@ -454,7 +664,8 @@ impl Task {
                     .send(fido_factor_task(pwd, dev, prev, res).await.err())
                     .unwrap();
             }
-        }
+        };
+        err_rx
     }
 }
 
@@ -604,10 +815,11 @@ async fn fido_factor_task(
         Err(e) => return Err(errors::TaskError::FidoError(e)),
     };
     let chall_2 = chall_2.await?;
-    let cid = make_credential_result.rpid_hash;
+    let cid = make_credential_result.credential_descriptor.id;
     tracing::warn!("Generating hash for \"{rpid_str_2}\" on \"{device_name}\", please comfirm.");
     let (dev, get_assertion_result) = tokio::task::spawn_blocking(move || {
         let a = GetAssertionArgsBuilder::new(&rpid_str_2, &chall_2)
+            .credential_id(&cid)
             .extensions(&[AssertionExtension::HmacSecret(Some(hmac_req))])
             .pin(&pin_2)
             .build();
@@ -627,7 +839,7 @@ async fn fido_factor_task(
     }
     let assertion = get_assertion_result[0].clone();
     let mut cid = assertion.credential_id;
-    let mut hmac_resp: Vec<u8> = vec![];
+    let mut hmac_resp = [0u8; 32];
     for ext in assertion.extensions {
         let x = match ext {
             AssertionExtension::HmacSecret(x) => x,
@@ -643,8 +855,9 @@ async fn fido_factor_task(
     }
     let hasher = new_hasher();
     let mut pwd = vec![];
+
     pwd.append(&mut cid);
-    pwd.append(&mut hmac_resp);
+    pwd.append(&mut hmac_resp.to_vec());
     let out = tokio::task::spawn_blocking(move || {
         let mut out = new_block();
         match hasher.hash_password_into(&pwd, &salt, &mut out) {

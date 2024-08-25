@@ -28,6 +28,8 @@ indicatif = "0.17.8"
 indicatif-log-bridge = "0.2.2"
 hex = "*"
 entropy = "0.4.2"
+itertools = "*"
+futures = "*"
 
 [profile.release]
 opt-level = 3
