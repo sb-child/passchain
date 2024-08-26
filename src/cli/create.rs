@@ -8,12 +8,15 @@ use std::sync::{
 };
 
 use crate::errors;
+use base64::Engine;
 use clap::{Parser, Subcommand};
 
 use indicatif::{ProgressBar, ProgressIterator};
 use inquire::InquireError;
 
 use strum::{Display, EnumDiscriminants, EnumIter, EnumString, IntoEnumIterator};
+use tracing::{info_span, Span};
+use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 const BLOCK_SIZE: usize = 128;
 type Block = [u8; BLOCK_SIZE];
@@ -59,7 +62,7 @@ fn new_hasher<'k>() -> argon2::Argon2<'k> {
     argon2::Argon2::new(
         argon2::Algorithm::Argon2id,
         argon2::Version::V0x13,
-        argon2::Params::new(20000, 20, 1, Some(BLOCK_SIZE)).unwrap(),
+        argon2::Params::new(1000000, 15, 1, Some(BLOCK_SIZE)).unwrap(),
         // argon2::Params::new(1000000, 30, 1, Some(BLOCK_SIZE)).unwrap(),
     )
 }
@@ -92,14 +95,14 @@ impl Executor {
     pub async fn execute(mut self) -> anyhow::Result<(), errors::PasschainError> {
         let prompt_thread = tokio::task::spawn_blocking(|| prompt_factors());
         let factors = prompt_thread.await??;
-        self.compute(factors).await?;
+        let (hash, pre, post) = self.compute(factors).await?;
         Ok(())
     }
 
     async fn compute(
         &mut self,
         factors: Vec<Factor>,
-    ) -> anyhow::Result<(), errors::PasschainError> {
+    ) -> anyhow::Result<(Block, Block, Block), errors::PasschainError> {
         // pre_bytes ->    any_factor(0)  -> any_factor(1..) -> post_bytes
         //      |              |                    |               |
         //      V              V                    V               V
@@ -108,7 +111,7 @@ impl Executor {
         //      v
         //   result
 
-        tracing::error!("Computing hash...");
+        tracing::info!("Computing hash, please wait...");
 
         // progress
         let prog_all = Arc::new(AtomicU64::new(0));
@@ -132,22 +135,30 @@ impl Executor {
         }
 
         // status and askpin
+        // todo
         let (askpin_tx, mut askpin_rx) = new_ask_pin_channel();
-        let curr_all = prog_all.clone();
-        let curr_completed = prog_completed.clone();
+        // let curr_all = prog_all.clone();
+        // let curr_completed = prog_completed.clone();
         let curr_done = done.clone();
-        let pb = ProgressBar::new(1);
-        tokio::task::spawn_blocking(move || loop {
-            let curr_all = curr_all.load(std::sync::atomic::Ordering::Relaxed);
-            let curr_completed = curr_completed.load(std::sync::atomic::Ordering::Relaxed);
-            let curr_done = curr_done.load(std::sync::atomic::Ordering::Relaxed);
-            if curr_all > 0 {
-                pb.set_length(curr_all);
-                pb.set_position(curr_completed);
-            }
-            match askpin_rx.try_recv() {
-                Ok(askpin) => {
-                    pb.suspend(|| {
+        // let pb = ProgressBar::new(1);
+        tokio::task::spawn_blocking(move || {
+            // todo
+            loop {
+                // let pb = info_span!("Compute progress");
+                // pb.pb_set_style(&indicatif::ProgressStyle::default_bar());
+                // let pbe = pb.enter();
+                // let curr_all = curr_all.load(std::sync::atomic::Ordering::Relaxed);
+                // let curr_completed = curr_completed.load(std::sync::atomic::Ordering::Relaxed);
+                let curr_done = curr_done.load(std::sync::atomic::Ordering::Relaxed);
+                // if curr_all > 0 {
+                //     pb.pb_start();
+                //     pb.pb_set_length(curr_all);
+                //     pb.pb_set_position(curr_completed);
+                // }
+                match askpin_rx.try_recv() {
+                    Ok(askpin) => {
+                        // drop(pbe);
+                        // drop(pb);
                         let ans = inquire::Password::new(&askpin.0)
                             .with_display_mode(inquire::PasswordDisplayMode::Masked)
                             .with_display_toggle_enabled()
@@ -162,13 +173,12 @@ impl Executor {
                                 drop(askpin.1);
                             }
                         }
-                    });
+                    }
+                    Err(_e) => std::thread::sleep(tokio::time::Duration::from_millis(1)),
+                };
+                if curr_done {
+                    break;
                 }
-                Err(_e) => std::thread::sleep(tokio::time::Duration::from_millis(1)),
-            };
-            if curr_done {
-                pb.finish_and_clear();
-                break;
             }
         });
 
@@ -367,13 +377,13 @@ impl Executor {
         .unwrap();
 
         tracing::info!(
-            "Compute completed, hash={}, pre={}, post={}",
+            "Hash computed successfully, hash={}, pre={}, post={}",
             hex::encode(result_rx),
             hex::encode(pre),
             hex::encode(post),
         );
 
-        Ok(())
+        Ok((result_rx, pre, post))
     }
 }
 
@@ -717,6 +727,7 @@ async fn hasher_task(
     if let Err(_) = res.send(x) {
         Err(errors::TaskError::ReceiverDropped)
     } else {
+        tracing::debug!("hasher_task done.");
         Ok(())
     }
 }
@@ -744,6 +755,7 @@ async fn password_factor_task(
         }
     })
     .await??;
+    tracing::debug!("password_factor_task done.");
     res.send(out).unwrap();
     Ok(())
 }
@@ -754,6 +766,7 @@ async fn fido_factor_task(
     prev: BlockReceiver,
     res: BlockSender,
 ) -> anyhow::Result<(), errors::TaskError> {
+    use base64::engine::general_purpose::URL_SAFE;
     use ctap_hid_fido2::{
         fidokey::{
             AssertionExtension, CredentialExtension, GetAssertionArgsBuilder,
@@ -762,27 +775,8 @@ async fn fido_factor_task(
         verifier::create_challenge,
     };
     use std::sync::Arc;
-    use tokio::sync::Mutex;
     let chall = tokio::task::spawn_blocking(|| create_challenge());
     let chall_2 = tokio::task::spawn_blocking(|| create_challenge());
-    let mut device_name = "".to_string();
-    let dev = match dev.await {
-        Ok(x) => {
-            device_name = x.device_name.clone();
-            let x = tokio::task::spawn_blocking(move || x.open());
-            x.await?
-        }
-        Err(_) => return Err(errors::TaskError::SenderDropped),
-    };
-    let dev = match dev {
-        Ok(x) => x,
-        Err(e) => return Err(errors::TaskError::FidoError(e)),
-    };
-    let (pwd_tx, pwd_rx) = new_string_channel();
-    let pin_content: AskPinContent = (format!("Enter FIDO PIN for \"{device_name}\":"), pwd_tx);
-    if let Err(_) = pwd.send(pin_content).await {
-        return Err(errors::TaskError::ReceiverDropped);
-    }
     let chall = chall.await?;
     let prev = match prev.await {
         Ok(x) => x,
@@ -792,14 +786,31 @@ async fn fido_factor_task(
     rpid.clone_from_slice(&prev[0..16]);
     hmac_req.clone_from_slice(&prev[16..(16 + 32)]);
     salt.clone_from_slice(&prev[(16 + 32)..]);
-    let rpid_str = format!("passchain-{}", hex::encode(rpid));
+    let mut s = String::new();
+    URL_SAFE.encode_string(rpid, &mut s);
+    let rpid_str = format!("passchain-{s}");
+    let dev = match dev.await {
+        Ok(x) => x,
+        Err(_) => return Err(errors::TaskError::SenderDropped),
+    };
+    let device_name = dev.device_name.clone();
+    let (pwd_tx, pwd_rx) = new_string_channel();
+    let pin_content = (format!("Enter FIDO PIN for \"{device_name}\":"), pwd_tx);
+    if let Err(_) = pwd.send(pin_content).await {
+        return Err(errors::TaskError::ReceiverDropped);
+    }
     let pin = match pwd_rx.await {
         Ok(x) => Arc::new(x),
         Err(e) => return Err(errors::TaskError::FidoError(e.into())),
     };
     let pin_2 = pin.clone();
     let rpid_str_2 = rpid_str.clone();
-    tracing::warn!("Creating credential \"{rpid_str}\" on \"{device_name}\", please comfirm.");
+    let dev = tokio::task::spawn_blocking(move || dev.open()).await?;
+    let dev = match dev {
+        Ok(x) => x,
+        Err(e) => return Err(errors::TaskError::FidoError(e)),
+    };
+    tracing::warn!("Creating credential \"{rpid_str}\" on \"{device_name}\", please confirm.");
     let (dev, make_credential_result) = tokio::task::spawn_blocking(move || {
         let make_credential_args = MakeCredentialArgsBuilder::new(&rpid_str, &chall)
             .extensions(&[CredentialExtension::HmacSecret(Some(true))])
@@ -816,8 +827,9 @@ async fn fido_factor_task(
     };
     let chall_2 = chall_2.await?;
     let cid = make_credential_result.credential_descriptor.id;
-    tracing::warn!("Generating hash for \"{rpid_str_2}\" on \"{device_name}\", please comfirm.");
-    let (dev, get_assertion_result) = tokio::task::spawn_blocking(move || {
+    tracing::warn!("Generating hash for \"{rpid_str_2}\" on \"{device_name}\", please confirm.");
+    // dev.credential_management_enumerate_credentials(pin);
+    let (_, get_assertion_result) = tokio::task::spawn_blocking(move || {
         let a = GetAssertionArgsBuilder::new(&rpid_str_2, &chall_2)
             .credential_id(&cid)
             .extensions(&[AssertionExtension::HmacSecret(Some(hmac_req))])
@@ -866,6 +878,7 @@ async fn fido_factor_task(
         }
     })
     .await??;
+    tracing::debug!("fido_factor_task done.");
     res.send(out).unwrap();
     Ok(())
 }

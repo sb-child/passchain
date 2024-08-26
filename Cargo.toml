@@ -27,9 +27,17 @@ ring = "*"
 indicatif = "0.17.8"
 indicatif-log-bridge = "0.2.2"
 hex = "*"
+base64 = "*"
 entropy = "0.4.2"
 itertools = "*"
 futures = "*"
+tracing-indicatif = "0.3.6"
+
+[profile.dev.package."argon2"]
+opt-level = 3
+debug = false
+codegen-units = 1
+strip = true
 
 [profile.release]
 opt-level = 3
