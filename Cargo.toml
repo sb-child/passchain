@@ -11,6 +11,7 @@ license = "MPL-2.0"
 clap = { version = "4.5.15", features = ["derive"] }
 serde = { version = "*", features = ["derive"] }
 serde_json = { version = "*" }
+notify = { version = "*", features = ["serde"] }
 toml = { version = "*" }
 thiserror = { version = "*" }
 anyhow = { version = "*", features = ["backtrace"] }
@@ -32,6 +33,7 @@ entropy = "0.4.2"
 itertools = "*"
 futures = "*"
 tracing-indicatif = "0.3.6"
+regex = "1.10.6"
 
 [profile.dev.package."argon2"]
 opt-level = 3

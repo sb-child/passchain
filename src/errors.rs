@@ -13,10 +13,22 @@ pub enum PasschainError {
     AskError(#[from] AskError),
     #[error("join error: {0}")]
     JoinError(#[from] JoinError),
+    #[error("config rror: {0}")]
+    ConfigError(#[from] ConfigError),
     #[error("should exit")]
     ShouldExit,
     #[error("unknown error")]
     Unknown,
+}
+
+#[derive(Error, Debug)]
+pub enum ConfigError {
+    #[error("io error: {0}")]
+    ReadError(#[from] std::io::Error),
+    #[error("encode error: {0}")]
+    EncodeError(#[from] toml::ser::Error),
+    #[error("decode error: {0}")]
+    DecodeError(#[from] toml::de::Error),
 }
 
 #[derive(Error, Debug)]

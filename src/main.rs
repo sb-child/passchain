@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use clap::{Parser, Subcommand};
-use passchain::{cli, errors, utils};
+use passchain::{cli, config, errors, utils};
 use tracing::{error, instrument::WithSubscriber, level_filters::LevelFilter, Level};
 
 /// Multi-factor authentication for LUKS

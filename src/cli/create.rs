@@ -93,9 +93,46 @@ pub struct Executor {}
 
 impl Executor {
     pub async fn execute(mut self) -> anyhow::Result<(), errors::PasschainError> {
+        use crate::{config, utils};
         let prompt_thread = tokio::task::spawn_blocking(|| prompt_factors());
         let factors = prompt_thread.await??;
         let (hash, pre, post) = self.compute(factors).await?;
+        let (hash_b64, pre_b64, post_b64) = (
+            utils::b64::b64enc(&hash),
+            utils::b64::b64enc(&pre),
+            utils::b64::b64enc(&post),
+        );
+        let cfg = config::Cfg {
+            pre: pre_b64,
+            post: post_b64,
+        };
+        let cfg_str = cfg.str()?;
+        println!("You're almost done, please follow the steps.\n");
+        println!("1. Copy and save these lines to \"/passchain.toml\":");
+        println!("{}", cfg_str);
+
+        println!("2. Add a key slot and set this password:");
+        println!("{}\n", hash_b64);
+
+        println!("3. Copy me to \"/passchain\".\n");
+
+        println!("4. Copy and save this line to \"/etc/dracut.conf.d/99-passchain.conf\".");
+        println!("install_items+=\"/passchain /passchain.toml\"\n");
+
+        println!("5. Edit \"/etc/crypttab\", append \"keyscript=/passchain\".");
+        println!("install_items+=\"/passchain /passchain.toml\"\n");
+
+        println!("6. Execute these commands in your terminal to rebuild your initramfs.");
+        println!(
+            r#"sudo chown root:root /passchain.toml
+sudo chmod u=r,g=r,o-rwx /passchain.toml
+sudo chown root:root /passchain
+sudo chmod u=rx,g=rx,o-rwx /passchain
+sudo dracut --regenerate-all --force
+"#
+        );
+
+        println!("7. Reboot your system.");
         Ok(())
     }
 
@@ -376,12 +413,12 @@ impl Executor {
         )
         .unwrap();
 
-        tracing::info!(
-            "Hash computed successfully, hash={}, pre={}, post={}",
-            hex::encode(result_rx),
-            hex::encode(pre),
-            hex::encode(post),
-        );
+        // tracing::info!(
+        //     "Hash computed successfully, hash={}, pre={}, post={}",
+        //     hex::encode(result_rx),
+        //     hex::encode(pre),
+        //     hex::encode(post),
+        // );
 
         Ok((result_rx, pre, post))
     }
@@ -766,6 +803,7 @@ async fn fido_factor_task(
     prev: BlockReceiver,
     res: BlockSender,
 ) -> anyhow::Result<(), errors::TaskError> {
+    use crate::utils;
     use base64::engine::general_purpose::URL_SAFE;
     use ctap_hid_fido2::{
         fidokey::{
@@ -786,8 +824,7 @@ async fn fido_factor_task(
     rpid.clone_from_slice(&prev[0..16]);
     hmac_req.clone_from_slice(&prev[16..(16 + 32)]);
     salt.clone_from_slice(&prev[(16 + 32)..]);
-    let mut s = String::new();
-    URL_SAFE.encode_string(rpid, &mut s);
+    let s = utils::b64::b64enc(&rpid);
     let rpid_str = format!("passchain-{s}");
     let dev = match dev.await {
         Ok(x) => x,
