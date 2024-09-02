@@ -1,4 +1,5 @@
 /target
 /passchain
 /passchain.exe
+/passchain.toml
 /build

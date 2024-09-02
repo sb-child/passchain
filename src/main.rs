@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use clap::{Parser, Subcommand};
+use clap::{builder::Str, Parser, Subcommand};
 use passchain::{cli, config, errors, utils};
 use tracing::{error, instrument::WithSubscriber, level_filters::LevelFilter, Level};
 
@@ -13,6 +13,11 @@ struct Args {
     /// Force to keyscript mode
     #[arg(short, long, default_value_t = false)]
     keyscript: bool,
+
+    /// Config file path (only used with --keyscript)
+    #[arg(long)]
+    config_path: Option<String>,
+
     /// Subcommands
     #[command(subcommand)]
     sub: Option<SubCommands>,
@@ -72,6 +77,11 @@ async fn main() -> anyhow::Result<(), errors::PasschainError> {
         );
         return Err(errors::PasschainError::ShouldExit);
     };
-    let ks = cli::keyscript::Executor {};
+    let cfg_path = if args.keyscript {
+        args.config_path.unwrap_or("/keyscript.toml".into())
+    } else {
+        "/keyscript.toml".into()
+    };
+    let ks = cli::keyscript::Executor::new(cfg_path)?;
     ks.execute().await
 }

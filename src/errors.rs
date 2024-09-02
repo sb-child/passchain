@@ -13,8 +13,12 @@ pub enum PasschainError {
     AskError(#[from] AskError),
     #[error("join error: {0}")]
     JoinError(#[from] JoinError),
-    #[error("config rror: {0}")]
+    #[error("config error: {0}")]
     ConfigError(#[from] ConfigError),
+    #[error("canonicalize error: {0}")]
+    CanonicalizeError(std::io::Error),
+    #[error("terminal ui error: {0}")]
+    TuiError(std::io::Error),
     #[error("should exit")]
     ShouldExit,
     #[error("unknown error")]

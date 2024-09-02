@@ -120,7 +120,6 @@ impl Executor {
         println!("install_items+=\"/passchain /passchain.toml\"\n");
 
         println!("5. Edit \"/etc/crypttab\", append \"keyscript=/passchain\".");
-        println!("install_items+=\"/passchain /passchain.toml\"\n");
 
         println!("6. Execute these commands in your terminal to rebuild your initramfs.");
         println!(
