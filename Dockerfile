@@ -1,4 +1,4 @@
-FROM rust:1.80-alpine3.20 as builder
+FROM rust:1.80.1-alpine3.20 as builder
 
 WORKDIR /root/build
 RUN apk add --no-cache linux-headers libudev-zero-dev musl-dev upx

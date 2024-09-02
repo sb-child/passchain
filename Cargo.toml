@@ -19,7 +19,7 @@ tokio = { version = "*", features = ["full"] }
 inquire = { version = "0.7.5", features = ["date"] }
 strum = { version = "0.26", features = ["derive"] }
 chrono = "*"
-ctap-hid-fido2 = "3.5.1"
+ctap-hid-fido2 = { git = "https://github.com/sb-child/ctap-hid-fido2", branch = "master" }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 argon2 = { version = "0.5.3", features = ["zeroize"] }

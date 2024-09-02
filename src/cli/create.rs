@@ -108,25 +108,25 @@ impl Executor {
         };
         let cfg_str = cfg.str()?;
         println!("You're almost done, please follow the steps.\n");
-        println!("1. Copy and save these lines to \"/passchain.toml\":");
+        println!("1. Copy and save these lines to \"/keyscript.toml\":");
         println!("{}", cfg_str);
 
         println!("2. Add a key slot and set this password:");
         println!("{}\n", hash_b64);
 
-        println!("3. Copy me to \"/passchain\".\n");
+        println!("3. Copy me to \"/keyscript\".\n");
 
-        println!("4. Copy and save this line to \"/etc/dracut.conf.d/99-passchain.conf\".");
-        println!("install_items+=\"/passchain /passchain.toml\"\n");
+        println!("4. Copy and save this line to \"/etc/dracut.conf.d/99-PassChain.conf\".");
+        println!("install_items+=\"/keyscript /keyscript.toml\"\n");
 
-        println!("5. Edit \"/etc/crypttab\", append \"keyscript=/passchain\".");
+        println!("5. Edit \"/etc/crypttab\", append \"keyscript=/keyscript\".");
 
         println!("6. Execute these commands in your terminal to rebuild your initramfs.");
         println!(
-            r#"sudo chown root:root /passchain.toml
-sudo chmod u=r,g=r,o-rwx /passchain.toml
-sudo chown root:root /passchain
-sudo chmod u=rx,g=rx,o-rwx /passchain
+            r#"sudo chown root:root /keyscript.toml
+sudo chmod u=r,g=r,o-rwx /keyscript.toml
+sudo chown root:root /keyscript
+sudo chmod u=rx,g=rx,o-rwx /keyscript
 sudo dracut --regenerate-all --force
 "#
         );
@@ -140,12 +140,12 @@ sudo dracut --regenerate-all --force
         factors: Vec<Factor>,
     ) -> anyhow::Result<(Block, Block, Block), errors::PasschainError> {
         // pre_bytes ->    any_factor(0)  -> any_factor(1..) -> post_bytes
-        //      |              |                    |               |
-        //      V              V                    V               V
-        //    hash   <-       hash        <-      hash       <-   block
-        //      |
-        //      v
-        //   result
+        //                     |                    |               |
+        //                     V                    V               |
+        //                    hash        <-      hash       <------/
+        //                     |
+        //                     v
+        //                  result
 
         tracing::info!("Computing hash, please wait...");
 
