@@ -119,7 +119,7 @@ impl Executor {
         println!("4. Copy and save this line to \"/etc/dracut.conf.d/99-PassChain.conf\".");
         println!("install_items+=\"/keyscript /keyscript.toml\"\n");
 
-        println!("5. Edit \"/etc/crypttab\", append \"keyscript=/keyscript\".");
+        println!("5. Edit \"/etc/crypttab\", append \"keyscript=/keyscript\".\n");
 
         println!("6. Execute these commands in your terminal to rebuild your initramfs.");
         println!(
