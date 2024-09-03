@@ -824,7 +824,7 @@ async fn fido_factor_task(
     hmac_req.clone_from_slice(&prev[16..(16 + 32)]);
     salt.clone_from_slice(&prev[(16 + 32)..]);
     let s = utils::b64::b64enc(&rpid);
-    let rpid_str = format!("passchain-{s}");
+    let rpid_str = format!("{s}");
     let dev = match dev.await {
         Ok(x) => x,
         Err(_) => return Err(errors::TaskError::SenderDropped),
