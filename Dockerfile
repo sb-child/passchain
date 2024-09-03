@@ -1,4 +1,4 @@
-FROM rust:1.80.1-alpine3.20 as builder
+FROM rust:1.80.1-alpine3.20 AS builder
 
 WORKDIR /root/build
 RUN apk add --no-cache linux-headers libudev-zero-dev musl-dev upx
@@ -12,6 +12,6 @@ COPY src ./src
 
 RUN cargo b -r && mv target/release/passchain passchain && upx -9 passchain
 
-FROM scratch as release
+FROM scratch AS release
 
 COPY --from=builder /root/build/passchain /passchain
