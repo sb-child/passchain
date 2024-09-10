@@ -10,7 +10,6 @@ license = "MPL-2.0"
 [dependencies]
 clap = { version = "4.5.15", features = ["derive"] }
 serde = { version = "*", features = ["derive"] }
-serde_json = { version = "*" }
 notify = { version = "*", features = ["serde"] }
 toml = { version = "*" }
 thiserror = { version = "*" }
@@ -18,24 +17,17 @@ anyhow = { version = "*", features = ["backtrace"] }
 tokio = { version = "*", features = ["full"] }
 inquire = { version = "0.7.5", features = ["date"] }
 strum = { version = "0.26", features = ["derive"] }
-chrono = "*"
 ctap-hid-fido2 = { git = "https://github.com/sb-child/ctap-hid-fido2", branch = "master" }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 argon2 = { version = "0.5.3", features = ["zeroize"] }
-rand = "*"
 ring = "*"
 indicatif = "0.17.8"
-indicatif-log-bridge = "0.2.2"
-hex = "*"
 base64 = "*"
 entropy = "0.4.2"
-itertools = "*"
 futures = "*"
 tracing-indicatif = "0.3.6"
-regex = "1.10.6"
 ratatui = "0.28.1"
-tui-textarea = "0.6.1"
 
 [profile.dev.package."argon2"]
 opt-level = 3

@@ -3,7 +3,6 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use notify::EventKind;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::errors;
