@@ -4,9 +4,15 @@
 
 *正在开发*
 
-Multi-factor authentication plugin for systemd (`systemd-tty-ask-password-agent` replacement)
+Multi-factor authentication plugin for ~~[systemd](https://syste.md/)~~ [systemd](https://systemd.io/) ([`systemd-tty-ask-password-agent`](https://www.freedesktop.org/software/systemd/man/latest/systemd-tty-ask-password-agent.html) replacement)
 
-为 systemd 量身定制的 MFA(多因素验证) 插件，替代 `systemd-tty-ask-password-agent`
+为 ~~[systemd](https://syste.md/)~~ [systemd](https://systemd.io/) 量身定制的 MFA(多因素验证) 插件，[`systemd-tty-ask-password-agent`](https://www.freedesktop.org/software/systemd/man/latest/systemd-tty-ask-password-agent.html) 替代品
+
+## Features / 功能
+
+- [x] Supports unlimited factors / 支持设置无限多的因素
+- [x] Order sensitive / 对顺序敏感
+- [x] Only two salt values are stored / 只需保存两个随机盐值
 
 ## Roadmap / 路线图
 
@@ -14,7 +20,6 @@ Multi-factor authentication plugin for systemd (`systemd-tty-ask-password-agent`
 
 - [x] Encrypt process / 加密过程
 - [ ] Decrypt process / 解密过程 (coming soon)
-
 - [ ] Rewritting code / 重构代码
 
 ### Supported Factors / 支持的因素
