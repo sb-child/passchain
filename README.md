@@ -13,7 +13,7 @@ Multi-factor authentication plugin for systemd (`systemd-tty-ask-password-agent`
 ### Core / 核心部分
 
 - [x] Encrypt process / 加密过程
-- [x] Decrypt process / 解密过程
+- [ ] Decrypt process / 解密过程 (coming soon)
 
 - [ ] Rewritting code / 重构代码
 
