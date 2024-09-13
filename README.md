@@ -8,6 +8,15 @@ Multi-factor authentication plugin for ~~[systemd](https://syste.md/)~~ [systemd
 
 为 ~~[systemd](https://syste.md/)~~ [systemd](https://systemd.io/) 量身定制的 MFA(多因素验证) 插件，[`systemd-tty-ask-password-agent`](https://www.freedesktop.org/software/systemd/man/latest/systemd-tty-ask-password-agent.html) 替代品
 
+## Why do I need it / 为什么要用这个
+
+- Multiple (depending on how many factors you inputted) [Argon2](https://en.wikipedia.org/wiki/Argon2) computes makes your password stronger, and harder to bruteforce.
+- 进行多次(取决于输入多少个因素) Argon2 计算，让密码更难暴力破解
+- The password comes from the checksum of multiple factors. Although your Yubikey has been cracked - a passphrase behind is protecting you.
+- 使用多个因素的校验和作为密码。即使 Yubikey 被破解 - 还有密码短语作为最后一道防线
+- The decryption process doesn't know any information about your factors. You can input infinite factors, then wait forever and let cryptsetup try to decrypt your disk.
+- 你设置的因素信息，解密过程都不会知道。你可以输入无限个因素，等到世界末日然后交给 cryptsetup 尝试解锁硬盘
+
 ## Features / 功能
 
 - [x] Supports unlimited factors / 支持设置无限多的因素
