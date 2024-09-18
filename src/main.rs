@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<(), errors::PasschainError> {
     let indicatif_layer = IndicatifLayer::new();
     let subscriber = tracing_subscriber::fmt::layer()
         .compact()
-        .without_time()
+        // .without_time()
         .with_file(true)
         .with_line_number(true)
         .with_thread_ids(false)

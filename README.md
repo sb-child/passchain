@@ -40,7 +40,7 @@ Multi-factor authentication plugin for ~~[systemd](https://syste.md/)~~ [systemd
 ### Frontend / 前端
 
 - [ ] [Password Agent](https://systemd.io/PASSWORD_AGENTS/) `/dev/console` (coming soon)
-- [ ] `/dev/tty`
+- [ ] CLI `stdin` `stdout` `stderr`
 
 ## Build / 编译
 

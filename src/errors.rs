@@ -52,7 +52,7 @@ pub enum TaskError {
     #[error("fido error: {0}")]
     FidoError(anyhow::Error),
     #[error("hasher error: {0}")]
-    HasherError(argon2::Error),
+    HasherError(argonautica::Error),
     #[error("no assertion found")]
     NoAssertionFound,
     #[error("multiple assertion found")]

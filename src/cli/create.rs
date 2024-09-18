@@ -58,13 +58,35 @@ fn new_ask_pin_channel() -> (AskPinSender, AskPinReceiver) {
     tokio::sync::mpsc::channel(1)
 }
 
-fn new_hasher<'k>() -> argon2::Argon2<'k> {
-    argon2::Argon2::new(
-        argon2::Algorithm::Argon2id,
-        argon2::Version::V0x13,
-        argon2::Params::new(1000000, 15, 1, Some(BLOCK_SIZE)).unwrap(),
-        // argon2::Params::new(1000000, 30, 1, Some(BLOCK_SIZE)).unwrap(),
-    )
+fn new_hasher<'k>() -> argonautica::Hasher<'k> {
+    use argonautica::config::{Backend, Variant, Version};
+    let mut h = argonautica::Hasher::new();
+    h.configure_backend(Backend::C)
+        // .configure_cpu_pool(CpuPool::new(1))
+        .configure_hash_len(BLOCK_SIZE as u32)
+        .configure_iterations(2000)
+        .configure_lanes(1)
+        .configure_memory_size(1048576)
+        .configure_password_clearing(false)
+        .configure_secret_key_clearing(false)
+        .configure_threads(1)
+        .configure_variant(Variant::Argon2id)
+        .configure_version(Version::_0x13)
+        // i don't use this for now
+        .opt_out_of_secret_key(true);
+    h
+}
+
+fn calculate_hash<'k>(
+    mut argon: argonautica::Hasher<'k>,
+    pwd: &'k [u8],
+    salt: &'k [u8],
+) -> Result<Block, argonautica::Error> {
+    let r = argon.with_password(pwd).with_salt(salt).hash_raw()?;
+    let r = r.raw_hash_bytes();
+    let mut res = [0u8; BLOCK_SIZE];
+    res.copy_from_slice(r);
+    Ok(res)
 }
 
 fn new_random_block() -> Block {
@@ -755,9 +777,7 @@ async fn hasher_task(
     };
     let x = tokio::task::spawn_blocking(move || {
         let argon = new_hasher();
-        let mut out = new_block();
-        argon.hash_password_into(&pwd, &salt, &mut out).unwrap();
-        out
+        calculate_hash(argon, &pwd, &salt).unwrap()
     })
     .await?;
     if let Err(_) = res.send(x) {
@@ -784,9 +804,8 @@ async fn password_factor_task(
     };
     let out = tokio::task::spawn_blocking(move || {
         let pwd = pwd.as_bytes();
-        let mut out = new_block();
-        match hasher.hash_password_into(&pwd, &prev, &mut out) {
-            Ok(_) => Ok(out),
+        match calculate_hash(new_hasher(), pwd, &prev) {
+            Ok(x) => Ok(x),
             Err(e) => Err(errors::TaskError::HasherError(e)),
         }
     })
@@ -906,14 +925,12 @@ async fn fido_factor_task(
 
     pwd.append(&mut cid);
     pwd.append(&mut hmac_resp.to_vec());
-    let out = tokio::task::spawn_blocking(move || {
-        let mut out = new_block();
-        match hasher.hash_password_into(&pwd, &salt, &mut out) {
-            Ok(_) => Ok(out),
+    let out =
+        tokio::task::spawn_blocking(move || match calculate_hash(new_hasher(), &pwd, &salt) {
+            Ok(x) => Ok(x),
             Err(e) => Err(errors::TaskError::HasherError(e)),
-        }
-    })
-    .await??;
+        })
+        .await??;
     tracing::debug!("fido_factor_task done.");
     res.send(out).unwrap();
     Ok(())
