@@ -60,16 +60,16 @@ fn new_ask_pin_channel() -> (AskPinSender, AskPinReceiver) {
 
 fn new_hasher<'k>() -> argonautica::Hasher<'k> {
     use argonautica::config::{Backend, Variant, Version};
-    let mut h = argonautica::Hasher::new();
+    let mut h = argonautica::Hasher::default();
     h.configure_backend(Backend::C)
         // .configure_cpu_pool(CpuPool::new(1))
         .configure_hash_len(BLOCK_SIZE as u32)
-        .configure_iterations(2000)
-        .configure_lanes(1)
+        .configure_iterations(128)
+        .configure_lanes(16)
         .configure_memory_size(1048576)
         .configure_password_clearing(false)
         .configure_secret_key_clearing(false)
-        .configure_threads(1)
+        .configure_threads(16)
         .configure_variant(Variant::Argon2id)
         .configure_version(Version::_0x13)
         // i don't use this for now

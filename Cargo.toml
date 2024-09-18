@@ -29,7 +29,8 @@ tracing-indicatif = "0.3.6"
 ratatui = "0.28.1"
 argonautica = { git = "https://github.com/sb-child/argonautica", branch = "patch-static", features = [
     "simd",
-] }
+    "build_dynamic",
+], default-features = false }
 
 [profile.release]
 opt-level = 3

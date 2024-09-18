@@ -131,7 +131,7 @@ dependencies = [
 [[package]]
 name = "argonautica"
 version = "0.2.4"
-source = "git+https://github.com/sb-child/argonautica?branch=patch-static#be386605298370958265913edb4ae326b370cfc3"
+source = "git+https://github.com/sb-child/argonautica?branch=patch-static#677a9562276d9de4a2d67260917f46ce2e3e5cb7"
 dependencies = [
  "base64",
  "bindgen",
