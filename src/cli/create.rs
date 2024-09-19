@@ -8,15 +8,12 @@ use std::sync::{
 };
 
 use crate::errors;
-use base64::Engine;
-use clap::{Parser, Subcommand};
+use clap::Parser;
 
 use indicatif::{ProgressBar, ProgressIterator};
 use inquire::InquireError;
 
 use strum::{Display, EnumDiscriminants, EnumIter, EnumString, IntoEnumIterator};
-use tracing::{info_span, Span};
-use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 const BLOCK_SIZE: usize = 128;
 type Block = [u8; BLOCK_SIZE];
@@ -97,9 +94,9 @@ fn new_random_block() -> Block {
     tmp
 }
 
-fn new_block() -> Block {
-    [0; BLOCK_SIZE]
-}
+// fn new_block() -> Block {
+//     [0; BLOCK_SIZE]
+// }
 
 #[derive(Parser, Debug)]
 #[command()]
@@ -793,7 +790,6 @@ async fn password_factor_task(
     prev: BlockReceiver,
     res: BlockSender,
 ) -> anyhow::Result<(), errors::TaskError> {
-    let hasher = new_hasher();
     let pwd = match pwd.await {
         Ok(x) => x,
         Err(_) => return Err(errors::TaskError::SenderDropped),
@@ -822,7 +818,6 @@ async fn fido_factor_task(
     res: BlockSender,
 ) -> anyhow::Result<(), errors::TaskError> {
     use crate::utils;
-    use base64::engine::general_purpose::URL_SAFE;
     use ctap_hid_fido2::{
         fidokey::{
             AssertionExtension, CredentialExtension, GetAssertionArgsBuilder,
@@ -920,9 +915,8 @@ async fn fido_factor_task(
     if entropy::shannon_entropy(hmac_resp.clone()) <= 1.0 {
         return Err(errors::TaskError::LowEntropy);
     }
-    let hasher = new_hasher();
-    let mut pwd = vec![];
 
+    let mut pwd = vec![];
     pwd.append(&mut cid);
     pwd.append(&mut hmac_resp.to_vec());
     let out =
