@@ -61,7 +61,7 @@ fn new_hasher<'k>() -> argonautica::Hasher<'k> {
     h.configure_backend(Backend::C)
         // .configure_cpu_pool(CpuPool::new(1))
         .configure_hash_len(BLOCK_SIZE as u32)
-        .configure_iterations(128)
+        .configure_iterations(64)
         .configure_lanes(16)
         .configure_memory_size(1048576)
         .configure_password_clearing(false)
@@ -116,41 +116,23 @@ impl Executor {
         let prompt_thread = tokio::task::spawn_blocking(|| prompt_factors());
         let factors = prompt_thread.await??;
         let (hash, pre, post) = self.compute(factors).await?;
-        let (hash_b64, pre_b64, post_b64) = (
-            utils::b64::b64enc(&hash),
-            utils::b64::b64enc(&pre),
-            utils::b64::b64enc(&post),
+        // reduce the length because Qubes OS doesn't support password length > 100
+        let hash = utils::hash::blake3_64(&hash);
+        let (hash_str, pre_b64, post_b64) = (
+            utils::base_x::b93enc(&hash),
+            utils::base_x::b64enc(&pre),
+            utils::base_x::b64enc(&post),
         );
         let cfg = config::Cfg {
             pre: pre_b64,
             post: post_b64,
         };
         let cfg_str = cfg.str()?;
-        println!("You're almost done, please follow the steps.\n");
-        println!("1. Copy and save these lines to \"/keyscript.toml\":");
+        println!("Calculate done. Here's the config file:");
         println!("{}", cfg_str);
-
-        println!("2. Add a key slot and set this password:");
-        println!("{}\n", hash_b64);
-
-        println!("3. Copy me to \"/keyscript\".\n");
-
-        println!("4. Copy and save this line to \"/etc/dracut.conf.d/99-PassChain.conf\".");
-        println!("install_items+=\"/keyscript /keyscript.toml\"\n");
-
-        println!("5. Edit \"/etc/crypttab\", append \"keyscript=/keyscript\".\n");
-
-        println!("6. Execute these commands in your terminal to rebuild your initramfs.");
-        println!(
-            r#"sudo chown root:root /keyscript.toml
-sudo chmod u=r,g=r,o-rwx /keyscript.toml
-sudo chown root:root /keyscript
-sudo chmod u=rx,g=rx,o-rwx /keyscript
-sudo dracut --regenerate-all --force
-"#
-        );
-
-        println!("7. Reboot your system.");
+        println!("---");
+        println!("Password:");
+        println!("{}\n", hash_str);
         Ok(())
     }
 
@@ -837,7 +819,7 @@ async fn fido_factor_task(
     rpid.clone_from_slice(&prev[0..16]);
     hmac_req.clone_from_slice(&prev[16..(16 + 32)]);
     salt.clone_from_slice(&prev[(16 + 32)..]);
-    let s = utils::b64::b64enc(&rpid);
+    let s = utils::base_x::b64enc(&rpid);
     let rpid_str = format!("{s}");
     let dev = match dev.await {
         Ok(x) => x,
