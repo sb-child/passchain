@@ -10,7 +10,7 @@ Multi-factor authentication plugin for ~~[systemd](https://syste.md/)~~ [systemd
 
 ## Why do I need it / 为什么要用这个
 
-<detail>
+<details>
 
 - Multiple (depending on how many factors you inputted) [Argon2](https://en.wikipedia.org/wiki/Argon2) computes makes your password stronger, and harder to bruteforce.
 - 进行多次(取决于输入多少个因素) Argon2 计算，让密码更难暴力破解
@@ -19,7 +19,7 @@ Multi-factor authentication plugin for ~~[systemd](https://syste.md/)~~ [systemd
 - The decryption process doesn't know any information about your factors. You can input infinite factors, then wait forever and let cryptsetup try to decrypt your disk.
 - 你设置的因素信息，解密过程都不会知道。你可以输入无限个因素，等到世界末日然后交给 cryptsetup 尝试解锁硬盘
 
-</detail>
+</details>
 
 ## Features / 功能
 
