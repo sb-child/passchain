@@ -10,6 +10,7 @@ use std::sync::{
 use crate::errors;
 use clap::Parser;
 
+use ctap_hid_fido2::fidokey::CredentialSupportedKeyType;
 use indicatif::{ProgressBar, ProgressIterator};
 use inquire::InquireError;
 
@@ -846,6 +847,8 @@ async fn fido_factor_task(
     let (dev, make_credential_result) = tokio::task::spawn_blocking(move || {
         let make_credential_args = MakeCredentialArgsBuilder::new(&rpid_str, &chall)
             .extensions(&[CredentialExtension::HmacSecret(Some(true))])
+            // default: Ecdsa256
+            .key_type(CredentialSupportedKeyType::Ed25519)
             .pin(&pin)
             .resident_key()
             .build();
