@@ -1,6 +1,10 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 #[macro_export]
 macro_rules! impl_statement_conversions {
-    ($statement_enum:ident, $create_statement:ident, $verify_statement:ident) => {
+    ($statement_enum:ident, $create_statement:ident, $verify_statement:ident, $final_type:ty) => {
         impl From<super::Mode> for $statement_enum {
             fn from(value: super::Mode) -> Self {
                 match value {
@@ -61,9 +65,31 @@ macro_rules! impl_statement_conversions {
                 }
             }
         }
+
+        impl crate::factor::macros::TakeFinalValue for $statement_enum {
+            type Final = $final_type;
+
+            fn take_final(&mut self) -> Self::Final {
+                match self {
+                    $statement_enum::Create(state) => match state {
+                        $create_statement::Final(v) => v.take(),
+                        _ => None,
+                    },
+                    $statement_enum::Verify(state) => match state {
+                        $verify_statement::Final(v) => v.take(),
+                        _ => None,
+                    },
+                }
+            }
+        }
     };
 }
 
 pub trait MaybeMut<T> {
     fn maybe_mut<'a>(other: &'a mut T) -> Option<&'a mut Self>;
+}
+
+pub trait TakeFinalValue {
+    type Final;
+    fn take_final(&mut self) -> Self::Final;
 }

@@ -32,7 +32,7 @@ argonautica = { git = "https://github.com/sb-child/argonautica", rev = "217eca60
     "default",
 ], default-features = false }
 convert-base = "1.1.2"
-blake3 = "1.5.4"
+blake3 = { version = "1.5.4", features = ["rayon"] }
 sha2 = "0.10.8"
 sha3 = "0.10.8"
 nix = { version = "0.29.0", features = ["signal", "time"] }

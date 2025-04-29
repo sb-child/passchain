@@ -1,6 +1,10 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 use crate::{impl_statement_conversions, types::Block};
 
-use super::{Factor, Mode};
+use super::{Factor, Mode, Question, QuestionResponseError};
 
 pub struct PlaceholderFactor {}
 
@@ -9,7 +13,7 @@ impl Factor for PlaceholderFactor {
         todo!()
     }
 
-    fn next_question(&mut self) -> Option<super::Question> {
+    fn next_question(&mut self) -> Result<Option<Question>, QuestionResponseError> {
         todo!()
     }
 
@@ -27,16 +31,19 @@ pub enum PlaceholderFactorStatement {
 pub enum PlaceholderFactorCreateStatement {
     #[default]
     Start,
+    Final(Option<()>),
 }
 
 #[derive(Default)]
 pub enum PlaceholderFactorVerifyStatement {
     #[default]
     Start,
+    Final(Option<()>),
 }
 
 impl_statement_conversions!(
     PlaceholderFactorStatement,
     PlaceholderFactorCreateStatement,
-    PlaceholderFactorVerifyStatement
+    PlaceholderFactorVerifyStatement,
+    Option<()>
 );

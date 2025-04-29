@@ -1,3 +1,7 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 use tokio::sync::oneshot;
 
 use crate::types::Block;
@@ -10,7 +14,7 @@ pub mod macros;
 
 pub trait Factor {
     fn new(block: Block, mode: Mode) -> Self;
-    fn next_question(&mut self) -> Option<Question>;
+    fn next_question(&mut self) -> Result<Option<Question>, QuestionResponseError>;
     fn result(self) -> Result<Block, FactorOutputError>;
 }
 
@@ -94,6 +98,9 @@ pub enum QuestionResponseError {
 
     #[error("Backend Error")]
     BackendError,
+
+    #[error("Incorrect usage")]
+    IncorrectUsage,
 }
 
 pub enum QuestionResponse {
@@ -115,6 +122,6 @@ pub enum Mode {
 
 #[derive(thiserror::Error, Debug)]
 pub enum FactorOutputError {
-    // #[error("Request cancelled")]
-    // Cancelled,
+    #[error("Incorrect usage")]
+    IncorrectUsage,
 }
