@@ -17,7 +17,7 @@ anyhow = { version = "*", features = ["backtrace"] }
 tokio = { version = "*", features = ["full"] }
 inquire = { version = "0.7.5", features = ["date"] }
 strum = { version = "0.27.1", features = ["derive"] }
-ctap-hid-fido2 = { git = "https://github.com/sb-child/ctap-hid-fido2", branch = "master" }
+ctap-hid-fido2 = { git = "https://github.com/sb-child/ctap-hid-fido2", rev = "f05589b3e842a47c9df3080cf4fe2248a2e44821" }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 ring = "*"
@@ -27,7 +27,7 @@ entropy = "0.4.2"
 futures = "*"
 tracing-indicatif = "0.3.6"
 ratatui = "0.29.0"
-argonautica = { git = "https://github.com/sb-child/argonautica", branch = "fixed", features = [
+argonautica = { git = "https://github.com/sb-child/argonautica", rev = "217eca60f1f41c41652e23883f4e653f0f9cacf9", features = [
     "simd",
     "default",
 ], default-features = false }
@@ -35,6 +35,8 @@ convert-base = "1.1.2"
 blake3 = "1.5.4"
 sha2 = "0.10.8"
 sha3 = "0.10.8"
+nix = { version = "0.29.0", features = ["signal", "time"] }
+serde_ini = "0.2.0"
 
 [profile.release]
 opt-level = 3

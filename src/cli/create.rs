@@ -3,8 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64},
     Arc,
+    atomic::{AtomicBool, AtomicU64},
 };
 
 use crate::errors;
@@ -200,6 +200,7 @@ impl Executor {
                         let ans = inquire::Password::new(&askpin.0)
                             .with_display_mode(inquire::PasswordDisplayMode::Masked)
                             .with_display_toggle_enabled()
+                            .without_confirmation()
                             .with_help_message("press Enter to finish, press ESC or Ctrl-C to cancel, press Ctrl-R to toggle.")
                             .prompt();
                         match ans {
@@ -433,10 +434,10 @@ fn prompt_factors() -> anyhow::Result<Vec<Factor>, errors::PasschainError> {
                 Ok(f) => Factor::ask(f),
                 Err(e) => match e {
                     e @ errors::AskError::InquireError(_) => {
-                        return Err(errors::PasschainError::AskError(e))
+                        return Err(errors::PasschainError::AskError(e));
                     }
                     errors::AskError::Interrupted => {
-                        return Err(errors::PasschainError::AskError(e))
+                        return Err(errors::PasschainError::AskError(e));
                     }
                     errors::AskError::Canceled => break 'next_factor,
                 },
@@ -452,11 +453,11 @@ fn prompt_factors() -> anyhow::Result<Vec<Factor>, errors::PasschainError> {
                         oe @ _ => {
                             return Err(errors::PasschainError::AskError(
                                 errors::AskError::InquireError(oe),
-                            ))
+                            ));
                         }
                     },
                     errors::AskError::Interrupted => {
-                        return Err(errors::PasschainError::AskError(e))
+                        return Err(errors::PasschainError::AskError(e));
                     }
                     errors::AskError::Canceled => continue 'retry,
                 },
@@ -479,10 +480,10 @@ fn prompt_factors() -> anyhow::Result<Vec<Factor>, errors::PasschainError> {
                 }
                 Err(e) => match e {
                     e @ errors::AskError::InquireError(_) => {
-                        return Err(errors::PasschainError::AskError(e))
+                        return Err(errors::PasschainError::AskError(e));
                     }
                     errors::AskError::Interrupted => {
-                        return Err(errors::PasschainError::AskError(e))
+                        return Err(errors::PasschainError::AskError(e));
                     }
                     errors::AskError::Canceled => continue 'retry,
                 },

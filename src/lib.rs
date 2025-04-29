@@ -5,6 +5,10 @@
 pub mod cli;
 pub mod config;
 pub mod errors;
+pub mod factor;
+pub mod listener;
+pub mod model;
 pub mod modules;
+#[cfg(test)]
 mod test;
 pub mod utils;
