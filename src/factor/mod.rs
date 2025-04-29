@@ -1,10 +1,18 @@
 use tokio::sync::oneshot;
 
+use crate::types::Block;
+
 pub mod fidokey;
 pub mod password;
 pub mod placeholder;
 
-pub trait Factor {}
+pub mod macros;
+
+pub trait Factor {
+    fn new(block: Block, mode: Mode) -> Self;
+    fn next_question(&mut self) -> Option<Question>;
+    fn result(self) -> Result<Block, FactorOutputError>;
+}
 
 pub enum Factors {
     Placeholder,
@@ -61,6 +69,7 @@ pub enum QuestionProps {
     },
     Password {
         allow_toggle: bool,
+        confirm: bool,
     },
     SingleSelect {
         list: Vec<String>,

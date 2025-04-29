@@ -11,4 +11,5 @@ pub mod model;
 pub mod modules;
 #[cfg(test)]
 mod test;
+pub mod types;
 pub mod utils;
