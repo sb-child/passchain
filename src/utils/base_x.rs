@@ -99,6 +99,12 @@ pub fn recovery_code_64_enc(x: &[u8]) -> Vec<String> {
 }
 
 pub fn recovery_code_64_dec(x: &[String]) -> Result<Vec<u8>, RecoveryDecodeError> {
+    if x.len() != (64 + 32) / 4 {
+        return Err(RecoveryDecodeError::IncorrectInputLength(
+            (64 + 32) / 4,
+            x.len(),
+        ));
+    }
     let raw_bytes: Vec<u8> = x
         .iter()
         .map(|x| {
@@ -114,7 +120,7 @@ pub fn recovery_code_64_dec(x: &[String]) -> Result<Vec<u8>, RecoveryDecodeError
         .map_err(RecoveryDecodeError::ReedSolomonError)?;
     let data = buf.data(); // 64 bytes (512 bits)
     if data.len() != 64 {
-        return Err(RecoveryDecodeError::IncorrectLength(data.len(), 64));
+        return Err(RecoveryDecodeError::IncorrectDataLength(64, data.len()));
     }
     // assert_eq!(data.len(), 64);
     Ok(data.to_vec())
@@ -125,6 +131,9 @@ pub enum RecoveryDecodeError {
     #[error("Reed Solomon ECC decode error: {0:?}")]
     ReedSolomonError(reed_solomon::DecoderError),
 
-    #[error("Incorrect length: expect {0}, got {1}")]
-    IncorrectLength(usize, usize),
+    #[error("Incorrect data length: expect {0}, got {1}")]
+    IncorrectDataLength(usize, usize),
+
+    #[error("Incorrect input length: expect {0}, got {1}")]
+    IncorrectInputLength(usize, usize),
 }
