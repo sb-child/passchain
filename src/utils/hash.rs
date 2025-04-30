@@ -28,7 +28,11 @@ pub fn blake3_64(x: &[u8]) -> [u8; 64] {
 
 pub fn blake3<const N: usize>(x: &[u8]) -> [u8; N] {
     let mut hasher = blake3::Hasher::new();
-    hasher.update(x);
+    if x.len() < 128 * 1024 {
+        hasher.update(x);
+    } else {
+        hasher.update_rayon(x);
+    }
     let mut o = hasher.finalize_xof();
     let mut output = [0; N];
     o.fill(&mut output);

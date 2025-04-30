@@ -116,6 +116,7 @@ impl Factor for PasswordFactor {
         use sha3::Digest;
         let mut hasher = sha3::Sha3_512::new();
         hasher.update(self.block);
+        hasher.update(b"passchain-password-factor");
         hasher.update(password_bytes);
         let hash = hasher.finalize();
         let mut res: Block = [0u8; BLOCK_SIZE];
