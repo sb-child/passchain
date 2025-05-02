@@ -2,6 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use std::fmt::Display;
+
 use tokio::sync::oneshot;
 
 use crate::types::Block;
@@ -58,6 +60,13 @@ impl Question {
     }
 }
 
+// pub struct Displayable<T>
+// where
+//     T: Display,
+// {
+//     pub inner: Box<T>,
+// }
+
 pub enum QuestionProps {
     PlainText {
         min: usize,
@@ -87,9 +96,14 @@ pub enum QuestionProps {
     Confirm {
         default: bool,
     },
+    Notice {},
+    Continue {
+        print_title: bool,
+    },
 }
 
 pub type QuestionResponseType = Result<QuestionResponse, QuestionResponseError>;
+pub type RespChan = Option<oneshot::Receiver<QuestionResponseType>>;
 
 #[derive(thiserror::Error, Debug)]
 pub enum QuestionResponseError {

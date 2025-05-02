@@ -12,7 +12,7 @@ use crate::{
 
 use super::{
     Factor, FactorOutputError, Mode, Question, QuestionProps, QuestionResponse,
-    QuestionResponseError, QuestionResponseType, macros::MaybeMut,
+    QuestionResponseError, RespChan, macros::MaybeMut,
 };
 
 pub struct PasswordFactor {
@@ -46,9 +46,7 @@ impl PasswordFactor {
                     QuestionResponse::Password(p) => {
                         *state = PasswordFactorCreateStatement::Final(Some(p));
                     }
-                    _ => {
-                        return Err(QuestionResponseError::IncorrectUsage);
-                    }
+                    _ => return Err(QuestionResponseError::IncorrectUsage),
                 }
                 Ok(None)
             }
@@ -80,9 +78,7 @@ impl PasswordFactor {
                     QuestionResponse::Password(p) => {
                         *state = PasswordFactorVerifyStatement::Final(Some(p));
                     }
-                    _ => {
-                        return Err(QuestionResponseError::IncorrectUsage);
-                    }
+                    _ => return Err(QuestionResponseError::IncorrectUsage),
                 }
                 Ok(None)
             }
@@ -134,7 +130,7 @@ pub enum PasswordFactorStatement {
 pub enum PasswordFactorCreateStatement {
     #[default]
     Start,
-    Wait(Option<oneshot::Receiver<QuestionResponseType>>),
+    Wait(RespChan),
     Final(Option<String>),
 }
 
@@ -142,7 +138,7 @@ pub enum PasswordFactorCreateStatement {
 pub enum PasswordFactorVerifyStatement {
     #[default]
     Start,
-    Wait(Option<oneshot::Receiver<QuestionResponseType>>),
+    Wait(RespChan),
     Final(Option<String>),
 }
 
